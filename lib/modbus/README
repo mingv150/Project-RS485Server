@@ -1,0 +1,303 @@
+============================================================================
+=                               LibModbus 0.0.1	               05/08/2001  =
+=                                                                          =
+=           This software is Copyright (C) 2001 by Laurent LOPES.          =
+=      Use this software at your own risk. I am not responsible for        =
+=            anything this software may do to your computer.               =
+=     This software falls under the GNU Public License. Please read        =
+=                  the COPYING file for more information                   =
+============================================================================
+
+
+======================================
+ Author
+======================================
+ 
+Author: Laurent LOPES
+e-mail: pes@free.fr
+homepage: pes.free.fr
+          
+
+======================================
+ Requirements
+======================================
+
+   libpthread
+
+
+======================================
+ Install
+======================================
+
+  Compilation: make
+  General install: make install
+  Removal: make uninstall
+
+
+======================================
+ Features
+======================================
+
+	This library is made to dial with master and slave Modbus(R) protocol. 
+If you want more information about Modbus protocol, please see the web page :
+http://www.modicon.com/techpubs/toc7.html
+	This program is free software and is provided under terms of the GNU 
+Public License. That's mean you can redistribute it and/or modify it under 
+the terms of the GNU Library General Public License as published by the Free 
+Software Foundation, either version 2 of the License, or (at your option) 
+any later version. This program is distributed in the hope that it will be 
+useful, but WITHOUT ANY WARRANTY. See the GNU Library General Public 
+License for more details in the COPYING file.
+
+
+======================================
+ Getting started
+======================================
+
+In this document value with 0x before indicate value in hexadecimal like in C.
+
+This library is working only in RTU mode and not in ASCII mode. So, you must 
+to configure every time 8 data bits. RTU mode is better than ASCII mode and I 
+use it every time.
+A RTU modbus packet look like :
+	Slave address	1 byte
+	Function code	1 byte
+	Data	   	N bytes
+	CRC16		2 bytes
+
+LibModbus don't know all modbus standard function, because I never use bits 
+functions :)
+Known functions are :
+code     		function
+03 (0x03)		read n bytes
+04 (0x04)		read n bytes
+06 (0x06)		write 1 byte
+07 (0x07)		read software status
+08 (0x08)		line test
+16 (0x0a)		write n bytes
+
+LibModbus us the GNU thread library. This library is generally provided 
+with all Linux distributions.
+
+
+======================================
+Programming the LibModbus
+======================================
+
+1. Open & Close
+======================================
+
+Before using master and slave functions you need to initialise the serial port 
+with the function :
+
+	int Mb_open_device(char device[], 
+			int speed, 
+			int parity,
+			int data_bits_length,
+			int stop_bits_length);
+
+
+- device is a string who contain the device to open : /dev/ttyS0 for COM1, 
+  /dev/ttyS1 for COM2, etc. 
+- speed indicate the speed in baud rate. Each values are : 50, 75, 110, 134, 
+  150, 200, 300, 600, 1200, 1800, 2400, 4800, 9600, 19200, 38400, 57600, 
+  115200, 230400. If you set another value, the function  use automatically 
+  9600 bauds.
+- parity is the parity off the frame. 0 indicate don't use parity, 1 indicate 
+  EVEN parity and -1 indicate ODD parity.
+- data_bits_length indicate the length of the data bits. You can set 7 or 
+  8 bits but in modbus RTU mode only 8 bits work.
+- data_bits_stop indicate how many bits to send at the end of the frame. 
+  You can set 1 or 2 bits.
+
+The serial port is open in bidirectional asynchronous mode. Mb_open_device() 
+save oldest parameters of the serial port to restore them when dial is 
+terminate.
+
+For more information about serial port configuration please read man pages : 
+man 2 open, man 2 read, man 2 write and the serial programming HOWTO.
+
+
+At the end of your program you can close and restore the oldest parameters 
+with :
+
+	void Mb_close_device(int device);
+
+- device indicate the device descriptor returned by the Mb_open_device()
+  function.
+
+
+2. Master
+======================================
+
+Before send a packet you need to configure it. There is a struct made for it : 
+Mbm_trame. The declaration of the Mbm_trame is declared as below :
+
+		struct {
+			int device;
+			int slave;
+			int function;
+			int address;
+			int length;
+			int timeout;
+		} Mbm_trame;
+
+- device indicate the device descriptor returned by Mb_open_device().
+- slave indicate the slave to call.
+- function indicate the function to send.
+- address indicate the address for functions 0x03, 0x04, 0x06, 0x0a. For 0x07 
+  and 0x08 functions, this value isn't use.
+- length indicate how many data to read or to write to the slave. 
+  This setting is only use for 0x03, 0x04, 0x0a modbus functions.
+
+
+When Mbm_trame done, you can call send the request with 
+
+	int Mb_master(Mbm_trame packet,
+		int data_in[],
+		int data_out[],
+		void *ptr_function_send,
+		void *ptr_function_receive);
+
+- packet is the struct Mbm_trame set above
+- data_in[] is data to send for writing functions. 
+		  Modbus function 0x06 (send one byte) send only data_in[0].
+            Modbus function 0x0a (send n bytes) send from data_in[0] to
+            data_in[packet.length-1] byte.
+- data_out[] is data answered by the slave on reading function like 0x03,
+             0x04,0x07. In 0x03 and 0x04 modbus functions data read are
+             stored from data_out[0] to data_out[packet.length-1] byte.
+             For the 0x07 function the slave statue is stored in
+             data_out[0].
+- ptr_function_send is a function called when master send a data on the
+                    serial port. If you don't want to call a function set
+                    NULL. There is a predefined function to print the
+                    character sent : Mb_snd_print(). See below to know
+                    more about it.
+- ptr_function_receive is a function called when master receive a data
+                       from the serial port. If you don't want to call a
+                       function set NULL. There is a predefined function
+                       to print the character received : Mb_rcv_print().
+                       See below to know more about it.
+
+The Mb_master() function compute alone the packet to send, according to the  
+setting above. The function send the packet and wait the slave answer during 
+the timeout time. If the slave answer before the end of the timeout time, the 
+master function check the slave answered packet, and in the case there isn't 
+failure write data in data_out[] and return the value 0. 
+If you make an error in the setting off the Mbm_trame struct the function 
+return -1 and send nothing.
+If there is noise on the line, or the slave answer bad data, or the control of 
+the crc16 in the slave packet is wrong, the function return -2 and store 
+nothing in data_out[].
+
+If this isn't the right slave who answered, the function return -4 and do 
+nothing with packet received.
+
+If the slave don"t answer before the end of the timeout, master 
+function return -3.
+
+
+3. Slave
+======================================
+
+Using slave function is easier as master. 
+The slave function work with a modbus database in 16 bits data defined by the 
+libmodbus : int *Mbs_data;
+Before using slave function you need to allocate memory area to this pointer 
+with malloc(). For example if you want a database of 1000 byte write at the 
+beginning of your program :
+
+    Mbs_data = (int *) malloc( 1000 * sizeof(int));
+                               ----
+                                 ^
+                                 |____ size of your modbus data map.
+
+Now you can launch the slave function with :
+
+	void Mb_slave(int device,
+		int slave,
+		void *ptr_function_send,
+		void *ptr_function_receive,
+		void *ptr_function_end);
+
+- device indicate the device descriptor returned by Mb_open_device().
+- slave indicate the slave number.
+- ptr_function_send is a function called when slave send a data on the
+                    serial port. If you don't want to call a function set
+                    NULL. There is a predefined function to print the
+                    character sent : Mb_snd_print(). See below to know
+                    more about it.
+- ptr_function_receive is a function called when slave receive a data from
+                       the serial port. If you don't want to call a
+                       function set NULL. There is a predefined function
+                       to print the character received : Mb_rcv_print().
+                       See below to know more about it.
+
+- ptr_function_end is a function called when slave finish to send answer
+                   to the master. If you don't want to call a function set
+                   NULL.
+
+The slave function wait data from the serial port. When master send a byte 
+equal to his slave number, the slave read all the packet, check the crc16 and 
+if all is right write or read modbus datamap(Mbs_data[]) according to the 
+master request, compute and send answer.
+This function make a thread for running and to wait data from the serial port 
+in an another task. That way calling Mb_slave() is very quick and the main 
+program continue his way. So you can work with the modbus datamap. 
+It's of course possible to write and read in Mbs_data[] during the execution 
+of the Mbs_slave() function.
+You can know the pid of the slave function. It's stored in a integer defined 
+by the libmodbus : int Mbs_pid;
+
+
+To stop the slave function you can call :
+
+	void Mb_slave_stop(void);
+
+This function stop the slave function and clean all threads. After this 
+function you can recall the Mb_slave() without problems. 
+Be careful ! Don't launch several Mb_slave() function in the same time, 
+because there will be a mix between data of both functions and cause wrong 
+data and also bugs.
+
+
+4. Misc.
+======================================
+
+int Mb_verbose;
+To debug your program - and the library :) - you can switch on Mb_verbose to 1.
+This integer is defined by the libmodbus. Set to 1 indicate master and slave 
+function to write everything about the communication on the standard output 
+(usually your screen).If you don't use this integer master and slave are 
+automatically without verbose.
+
+
+int Mb_status;
+If you use slave function with the 0x07 modbus function, slave return status 
+of your program. This status is defined by the libmodbus in a 16 bit variable.
+You can store every thing that you want in this data between 0 and 65535.
+
+
+You can know the version of the libmodbus calling the function :
+
+		char *Mb_version(void);
+
+Maybe one day there will be newest version...
+
+
+Function pointer :
+When you launch master or slave you can indicate function to call when receive 
+or send a data. In the libmodbus there is one function predefined for each 
+action :
+
+		void Mb_rcv_print(unsigned char c);
+
+This function print in the standard output : "receiving byte ->" and the 
+character in hexadecimal and decimal mode.
+
+		void Mb_snd_print(unsigned char c);
+
+This function print in the standard output : "sending byte ->" and the 
+character in hexadecimal and decimal mode.
+
