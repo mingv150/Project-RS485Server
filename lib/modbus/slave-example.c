@@ -1,6 +1,7 @@
 #include <modbus.h>
 
 /* compiling : gcc slave-example.c -o slave-example -lmodbus */
+/* arm-none-linux-gnueabi-gcc slave-example.c -o slave-example -L./ -I./ -lmodbus */
 
 void answer_sended(int function, int address, int length)
 {

@@ -1,6 +1,7 @@
 #include <modbus.h>
 
 /* compiling : gcc master-example.c -o master-example -lmodbus */
+/* arm-none-linux-gnueabi-gcc master-example.c -o master-example -L./ -I./ -lmodbus */
 
 int main()
 {
